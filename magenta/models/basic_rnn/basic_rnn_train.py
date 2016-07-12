@@ -279,8 +279,6 @@ def training_loop(graph, train_dir, num_training_steps=10000,
   learning_rate = graph.get_collection('learning_rate')[0]
   training_op = graph.get_collection('training_op')[0]
 
-  checkpoint_file = os.path.join(train_dir, 'basic_rnn.ckpt')
-
   with graph.as_default():
     summary_op = tf.merge_summary([
         tf.scalar_summary('cross_entropy_loss', cross_entropy),
@@ -296,8 +294,16 @@ def training_loop(graph, train_dir, num_training_steps=10000,
   session = tf.Session(graph=graph)
   summary_writer = tf.train.SummaryWriter(train_dir, session.graph)
 
+  checkpoint_file = os.path.join(train_dir, 'basic_rnn.ckpt')
+  logging.info('Checkpoint file: %s', checkpoint_file)
+
+  if os.path.exists(checkpoint_file):
+    saver.restore(session, checkpoint_file)
+  else:
+    session.run(init_op)
+
   coord = tf.train.Coordinator()
-  threads = tf.train.start_queue_runners(sess=session, coord=coord)
+  tf.train.start_queue_runners(sess=session, coord=coord)
 
   step = 0
   gs = 0
@@ -305,7 +311,6 @@ def training_loop(graph, train_dir, num_training_steps=10000,
   logging.info('Starting training loop')
   try:
     accuracies = collections.deque(maxlen=steps_to_average)
-    session.run(init_op)
     while gs < num_training_steps:
       step += 1
       ce, lp, a, gs, lr, serialized_summaries, _ = session.run(
