@@ -294,19 +294,18 @@ def training_loop(graph, train_dir, num_training_steps=10000,
   session = tf.Session(graph=graph)
   summary_writer = tf.train.SummaryWriter(train_dir, session.graph)
 
-  checkpoint_file = os.path.join(train_dir, 'basic_rnn.ckpt')
-  logging.info('Checkpoint file: %s', checkpoint_file)
-
-  if os.path.exists(checkpoint_file):
+  checkpoint_file = tf.train.latest_checkpoint(train_dir)
+  if checkpoint_file:
+    logging.info('Checkpoint file: %s', checkpoint_file)
     saver.restore(session, checkpoint_file)
   else:
+    checkpoint_file = os.path.join(train_dir, 'basic_rnn.ckpt')
     session.run(init_op)
 
   coord = tf.train.Coordinator()
   tf.train.start_queue_runners(sess=session, coord=coord)
 
-  step = 0
-  gs = 0
+  step = gs = session.run(global_step)
 
   logging.info('Starting training loop')
   try:
@@ -332,7 +331,7 @@ def training_loop(graph, train_dir, num_training_steps=10000,
         yield {'step': step, 'global_step': gs, 'loss': ce,
                'log_perplexity': lp, 'accuracy': a,
                'average_accuracy': avg_accuracy, 'learning_rate': lr}
-    saver.save(session, train_dir, global_step=gs)
+    saver.save(session, checkpoint_file, global_step=gs)
   except tf.errors.OutOfRangeError as e:
     logging.warn('Got error reported to coordinator: %s', e)
   finally:
