@@ -20,6 +20,7 @@ TensorFlow's SequenceExample protos for input to the melody RNN models.
 import random
 
 # internal imports
+import numpy as np
 import tensorflow as tf
 
 from magenta.lib import melodies_lib
@@ -60,6 +61,56 @@ class EncoderUnit(pipeline_unit.PipelineUnit):
     return [encoded]
 
 
+class BarEncoderUnit(pipeline_unit.PipelineUnit):
+
+  def __init__(self, melody_encoder_decoder, steps_per_bar=16):
+    super(BarEncoderUnit, self).__init__()
+    self.melody_encoder_decoder = melody_encoder_decoder
+    self.steps_per_bar = steps_per_bar
+
+  def transform(self, melody):
+    if melody.steps_per_bar != self.steps_per_bar:
+      return []
+    melody.squash(self.melody_encoder_decoder.min_note, self.melody_encoder_decoder.max_note, self.melody_encoder_decoder.transpose_to_key)
+    outputs = []
+    for index in range(0, len(melody.events), self.steps_per_bar):
+      if len(melody.events) - index <= self.steps_per_bar:
+        break
+      values = np.zeros((self.steps_per_bar, self.melody_encoder_decoder.input_size))
+      for j in range(self.steps_per_bar):
+        melody_event = melody.events[index + j]
+        values[j, self.melody_encoder_decoder.melody_event_to_model_event(melody_event)] = 1.0
+      feature = tf.train.Feature(float_list=tf.train.FloatList(value=values.reshape((-1,))))
+      example = tf.train.Example(features=tf.train.Features(feature={'notes': feature}))
+      outputs.append(example)
+    return outputs
+
+
+class PhraseEncoderUnit(pipeline_unit.PipelineUnit):
+
+  def __init__(self, melody_encoder_decoder, steps_per_bar=16, phrase_bar_len=16):
+    self.melody_encoder_decoder = melody_encoder_decoder
+    self.steps_per_bar = steps_per_bar
+    self.phrase_len = phrase_bar_len * steps_per_bar
+
+  def transform(self, melody):
+    if melody.steps_per_bar != self.steps_per_bar:
+      return []
+    melody.squash(self.melody_encoder_decoder.min_note, self.melody_encoder_decoder.max_note, self.melody_encoder_decoder.transpose_to_key)
+    outputs = []
+    for index in range(0, len(melody.events), self.phrase_len):
+      if len(melody.events) - index <= self.phrase_len:
+        break
+      values = np.zeros((self.phrase_len,), dtype=int)
+      for j in range(self.phrase_len):
+        melody_event = melody.events[index + j]
+        values[j] = self.melody_encoder_decoder.melody_event_to_model_event(melody_event)
+      feature = tf.train.Feature(int64_list=tf.train.Int64List(value=values.reshape((-1,))))
+      example = tf.train.Example(features=tf.train.Features(feature={'phrase': feature}))
+      outputs.append(example)
+    return outputs
+
+
 def random_partition(input_list, partition_ratio):
   partitions = [], []
   for item in input_list:
@@ -91,7 +142,8 @@ class BasicRNNPipeline(pipeline.Pipeline):
     self.melody_extractor = pipeline_units_common.MonophonicMelodyExtractor(
         min_bars=7, min_unique_pitches=5,
         gap_bars=1.0, ignore_polyphonic_notes=False)
-    self.encoder_unit = EncoderUnit(melody_encoder_decoder)
+    #self.encoder_unit = BarEncoderUnit(melody_encoder_decoder)
+    self.encoder_unit = PhraseEncoderUnit(melody_encoder_decoder)
     self.stats_dict = {}
 
   def transform(self, note_sequence):
