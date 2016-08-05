@@ -281,3 +281,28 @@ class Histogram(Statistic):
 
   def copy(self):
     return copy.copy(self)
+
+
+class StringCounter(Statistic):
+
+  def __init__(self, name):
+    super(StringCounter, self).__init__(name)
+    self.string_counts = {}
+
+  def add_string(self, string, inc=1):
+    if string not in self.string_counts:
+      self.string_counts[string] = inc
+    else:
+      self.string_counts[string] += inc
+
+  def _merge_from(self, other):
+    if not isinstance(other, StringCounter):
+      raise MergeStatisticsException()
+    for string, count in other.string_counts.items():
+      self.add_string(string, count)
+
+  def _pretty_print(self, name):
+    return ('%s:\n  (string: count)\n  ' + '\n  '.join([string + ': ' + str(count) for string, count in self.string_counts.items()]))
+
+  def copy(self):
+    return copy.copy(self)

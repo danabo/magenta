@@ -255,6 +255,14 @@ class Pipeline(object):
     return list(self._stats)
 
 
+class FileIteratorResult(object):
+
+  def __init__(self, raw_bytes, root_dir, relative_path):
+    self.raw_bytes = raw_bytes
+    self.root_dir = root_dir
+    self.relative_path = relative_path
+
+
 def file_iterator(root_dir, extension=None, recurse=True):
   """Generator that iterates over all files in the given directory.
 
@@ -289,7 +297,7 @@ def file_iterator(root_dir, extension=None, recurse=True):
     else:
       if extension is None or sub.lower().endswith(extension):
         with open(sub, 'rb') as f:
-          yield f.read()
+          yield FileIteratorResult(f.read(), root_dir, os.path.relpath(sub, root_dir))
 
 
 def tf_record_iterator(tfrecord_file, proto):

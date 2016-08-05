@@ -28,8 +28,12 @@ from magenta.protobuf import music_pb2
 
 
 FLAGS = tf.app.flags.FLAGS
-tf.app.flags.DEFINE_string('input', None,
+tf.app.flags.DEFINE_string('midi_dir', None,
+                           'Directory containing MIDI files to convert.')
+tf.app.flags.DEFINE_string('note_sequence_input', None,
                            'TFRecord to read NoteSequence protos from.')
+tf.app.flags.DEFINE_string('models', '',
+                           'A comma seperated list of model names. Training (and eval if eval_ratio is not 0) datasets for each model in the list will be generated simultaneously. If no models are given, NoteSequnce TFRecords will be produced.')
 tf.app.flags.DEFINE_string('output_dir', None,
                            'Directory to write training and eval TFRecord '
                            'files. The TFRecord files are populated with '
@@ -39,61 +43,32 @@ tf.app.flags.DEFINE_float('eval_ratio', 0.0,
                           'Partition is randomly selected.')
 
 
-class EncoderPipeline(pipeline.Pipeline):
-  """A Module that converts monophonic melodies to a model specific encoding."""
-
-  def __init__(self, melody_encoder_decoder):
-    """Constructs a EncoderPipeline.
-
-    A melodies_lib.MelodyEncoderDecoder is needed to provide the
-    `encode` function.
-
-    Args:
-      melody_encoder_decoder: A melodies_lib.MelodyEncoderDecoder object.
-    """
-    super(EncoderPipeline, self).__init__(
-        input_type=melodies_lib.MonophonicMelody,
-        output_type=tf.train.SequenceExample)
-    self.melody_encoder_decoder = melody_encoder_decoder
-
-  def transform(self, melody):
-    encoded = self.melody_encoder_decoder.encode(melody)
-    return [encoded]
-
-  def get_stats(self):
-    return {}
-
-
-def get_pipeline(melody_encoder_decoder):
-  """Returns the Pipeline instance which creates the RNN dataset.
-
-  Args:
-    melody_encoder_decoder: A melodies_lib.MelodyEncoderDecoder object.
-
-  Returns:
-    A pipeline.Pipeline instance.
-  """
-  quantizer = pipelines_common.Quantizer(steps_per_beat=4)
-  melody_extractor = pipelines_common.MonophonicMelodyExtractor(
-      min_bars=7, min_unique_pitches=5,
-      gap_bars=1.0, ignore_polyphonic_notes=False)
-  encoder_pipeline = EncoderPipeline(melody_encoder_decoder)
-  partitioner = pipelines_common.RandomPartition(
-      tf.train.SequenceExample,
-      ['eval_melodies', 'training_melodies'],
-      [FLAGS.eval_ratio])
-
-  dag = {quantizer: dag_pipeline.Input(music_pb2.NoteSequence),
-         melody_extractor: quantizer,
-         encoder_pipeline: melody_extractor,
-         partitioner: encoder_pipeline,
-         dag_pipeline.Output(): partitioner}
-  return dag_pipeline.DAGPipeline(dag)
-
-
-def run_from_flags(pipeline_instance):
+def main(_):
   tf.logging.set_verbosity(tf.logging.INFO)
-  pipeline.run_pipeline_serial(
-      pipeline_instance,
-      pipeline.tf_record_iterator(FLAGS.input, pipeline_instance.input_type),
+
+  models = [model.strip() for model in FLAGS.models.split(',')]
+  tf.logging.info('Generating datasets for these models: %s', models)
+
+  note_sequence_to_output = multi_model_pipeline(models, {'eval_ratio': FLAGS.eval_ratio})
+
+  if FLAGS.midi_dir:
+    midi_to_note_sequence = pipelines_common.MidiToNoteSequence()
+    dag = {midi_to_note_sequence: dag_pipeline.Input(midi_to_note_sequence.input_type),
+           note_sequence_to_output: midi_to_note_sequence,
+           dag_pipeline.Output(): note_sequence_to_output}
+    master_pipeline = dag_pipeline.DAGPipeline(dag, 'Midi')
+    pipeline.run_pipeline_serial(
+      note_sequence_to_output,
+      pipeline.file_iterator(FLAGS.midi_dir, master_pipeline.input_type),
       FLAGS.output_dir)
+  elif FLAGS.note_sequence_input:
+    pipeline.run_pipeline_serial(
+      note_sequence_to_output,
+      pipeline.tf_record_iterator(FLAGS.note_sequence_input, note_sequence_to_output.input_type),
+      FLAGS.output_dir)
+  else:
+    raise ValueError()
+
+
+if __name__ == '__main__':
+  tf.app.run()

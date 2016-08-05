@@ -28,6 +28,31 @@ from magenta.lib import sequences_lib
 from magenta.pipelines import pipeline
 from magenta.pipelines import statistics
 from magenta.protobuf import music_pb2
+from magenta.lib import midi_io
+from magenta.lib import note_sequence_io
+
+
+class MidiToNoteSequence(pipeline.Pipeline):
+
+  def __init__(self):
+    super(MidiToNoteSequence, self).__init__(
+        input_type=pipeline.FileIteratorResult,
+        output_type=music_pb2.NoteSequence)
+
+  def transform(self, file_iter_result):
+    midis_skipped_counter = statistics.Counter('midi_files_skipped')
+    error_msg_counter = statistics.StringCounter('midi_parse_errors')
+    try:
+      sequence = midi_io.midi_to_sequence_proto(file_iter_result.raw_bytes)
+    except midi_io.MIDIConversionError as e:
+      error_msg_counter.add_string(str(e))
+      midis_skipped_counter.increment()
+    sequence.collection_name = file_iter_result.root_dir
+    sequence.filename = file_iter_result.relative_path
+    sequence.id = note_sequence_io.generate_id(sequence.filename,
+                                               sequence.collection_name, 'midi')
+    self._set_stats([midis_skipped_counter, error_msg_counter])
+    return [sequence]
 
 
 class Quantizer(pipeline.Pipeline):
