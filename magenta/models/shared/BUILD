@@ -21,6 +21,17 @@ package(
 
 licenses(["notice"])  # Apache 2.0
 
+# Create public package group for Pipelines that generate datasets.
+package_group(
+    name = "model_pipelines",
+    visibility = "//third_party/magenta:__subpackages__",
+    packages = [
+        "//magenta/models/basic_rnn:basic_rnn_create_dataset",
+        "//magenta/models/lookback_rnn:lookback_rnn_create_dataset",
+        "//magenta/models/attention_rnn:attention_rnn_create_dataset",
+    ]
+)
+
 py_library(
     name = "melody_rnn_create_dataset",
     srcs = ["melody_rnn_create_dataset.py"],

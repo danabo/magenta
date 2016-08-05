@@ -65,6 +65,7 @@ py_test(
 
 py_library(
     name = "pipelines_common",
+    visibility = "//third_party/magenta:__subpackages__",
     srcs = ["pipelines_common.py"],
     deps = [
         ":pipeline",
